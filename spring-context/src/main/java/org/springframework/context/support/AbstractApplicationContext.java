@@ -16,21 +16,8 @@
 
 package org.springframework.context.support;
 
-import java.io.IOException;
-import java.lang.annotation.Annotation;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.springframework.beans.BeansException;
 import org.springframework.beans.CachedIntrospectionResults;
 import org.springframework.beans.factory.BeanFactory;
@@ -40,29 +27,8 @@ import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.support.ResourceEditorRegistrar;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationContextAware;
-import org.springframework.context.ApplicationEvent;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.ApplicationEventPublisherAware;
-import org.springframework.context.ApplicationListener;
-import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.EmbeddedValueResolverAware;
-import org.springframework.context.EnvironmentAware;
-import org.springframework.context.HierarchicalMessageSource;
-import org.springframework.context.LifecycleProcessor;
-import org.springframework.context.MessageSource;
-import org.springframework.context.MessageSourceAware;
-import org.springframework.context.MessageSourceResolvable;
-import org.springframework.context.NoSuchMessageException;
-import org.springframework.context.PayloadApplicationEvent;
-import org.springframework.context.ResourceLoaderAware;
-import org.springframework.context.event.ApplicationEventMulticaster;
-import org.springframework.context.event.ContextClosedEvent;
-import org.springframework.context.event.ContextRefreshedEvent;
-import org.springframework.context.event.ContextStartedEvent;
-import org.springframework.context.event.ContextStoppedEvent;
-import org.springframework.context.event.SimpleApplicationEventMulticaster;
+import org.springframework.context.*;
+import org.springframework.context.event.*;
 import org.springframework.context.expression.StandardBeanExpressionResolver;
 import org.springframework.context.weaving.LoadTimeWeaverAware;
 import org.springframework.context.weaving.LoadTimeWeaverAwareProcessor;
@@ -82,6 +48,11 @@ import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.ReflectionUtils;
+
+import java.io.IOException;
+import java.lang.annotation.Annotation;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Abstract implementation of the {@link org.springframework.context.ApplicationContext}
@@ -513,16 +484,29 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 		return this.applicationListeners;
 	}
 
+	/**
+	 * 加载或更新一个持久化的配置，可能是XML文件、属性文件或关系数据库模式
+	 * 由于这是一种启动方法，如果失败，就销毁已经创建的单例，以免悬空资源
+	 * 换句话 ，在调用改方法后，要么全部实例化，要么完全不实例化
+	 * @throws BeansException 如果bean工厂无法初始化，则抛出 BeansException 异常
+	 * @throws IllegalStateException 如果已经初始化且不支持多次刷新，则会抛出 IllegalStateException 异常
+	 */
 	@Override
 	public void refresh() throws BeansException, IllegalStateException {
+		// 给容器refresh加锁，避免容器处在refresh阶段时，容器进行了初始化或者销毁的操作
 		synchronized (this.startupShutdownMonitor) {
 			// Prepare this context for refreshing.
+			// 调用容器准备刷新的方法，获取容器的当时时间，同时给容器设置同步标识，具体方法
 			prepareRefresh();
 
 			// Tell the subclass to refresh the internal bean factory.
+			//告诉子类启动refreshBeanFactory()方法，Bean定义资源文件的载入从
+			//子类的refreshBeanFactory()方法启动，里面有抽象方法
+			//针对xml配置，最终创建内部容器，该容器负责 Bean 的创建与管理，此步会进行BeanDefinition的注册
 			ConfigurableListableBeanFactory beanFactory = obtainFreshBeanFactory();
 
 			// Prepare the bean factory for use in this context.
+			// 注册一些容器中需要的系统Bean.例如classloader，beanfactoryPostProcessor等
 			prepareBeanFactory(beanFactory);
 
 			try {
@@ -542,6 +526,7 @@ public abstract class AbstractApplicationContext extends DefaultResourceLoader
 				initApplicationEventMulticaster();
 
 				// Initialize other special beans in specific context subclasses.
+				// 钩子方法
 				onRefresh();
 
 				// Check for listener beans and register them.
